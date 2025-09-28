@@ -1,4 +1,3 @@
-// src/components/TypingRace.js
 import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
@@ -21,17 +20,16 @@ const sampleTexts = [
   "Keep in mind that many people have died for their beliefs; it's actually quite common. The real courage is in living and suffering for what you believe.",
 ];
 
-const TypingRace = ({ playerName }) => {
+const TypingRace = () => {
   const [text, setText] = useState("");
   const [userInput, setUserInput] = useState("");
-  // eslint-disable-next-line no-unused-vars
-  const [progress, setProgress] = useState(0);
   const [roomId, setRoomId] = useState("");
   const [currentRoom, setCurrentRoom] = useState(null);
   const [players, setPlayers] = useState({});
   const [status, setStatus] = useState("waiting");
   const [winner, setWinner] = useState(null);
-  const [user, setUser] = useState(null);
+  const [playerName, setPlayerName] = useState("");
+  const [countdown, setCountdown] = useState(null);
 
   const inputRef = useRef(null);
   const uid = useRef(uuidv4()).current;
@@ -39,24 +37,21 @@ const TypingRace = ({ playerName }) => {
   const randomizedText =
     sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
 
-  // Handle Firebase Auth
+  // Firebase Auth
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-      } else {
-        // Sign in anonymously if not signed in
+      if (!currentUser) {
         signInAnonymously(auth).catch(console.error);
       }
     });
     return () => unsub();
   }, []);
 
-  // Push progress to Firebase
+  // Push progress
   const pushProgress = (room, progress) => {
     const roomRef = ref(db, `rooms/${room}/players/${uid}`);
     set(roomRef, {
-      name: playerName || user?.uid || `Player-${uid.slice(0, 5)}`,
+      name: playerName || `Player-${uid.slice(0, 5)}`,
       progress,
       finished: progress >= 100,
     });
@@ -70,28 +65,22 @@ const TypingRace = ({ playerName }) => {
     }
   };
 
-  // Handle typing
   const handleChange = (e) => {
     const val = e.target.value;
     setUserInput(val);
     const correctSoFar = text.slice(0, val.length);
-    let newProgress = 0;
     if (val === correctSoFar) {
-      newProgress = Math.min((val.length / text.length) * 100, 100);
-      setProgress(newProgress);
+      const newProgress = Math.min((val.length / text.length) * 100, 100);
       if (currentRoom) pushProgress(currentRoom, newProgress);
     }
   };
 
-  // Reset input (not the whole room)
   const handleRestart = () => {
     setUserInput("");
-    setProgress(0);
     if (currentRoom) pushProgress(currentRoom, 0);
     inputRef.current?.focus();
   };
 
-  // Create a new room
   const createRoom = () => {
     const id = uuidv4().slice(0, 6).toUpperCase();
     setCurrentRoom(id);
@@ -104,20 +93,27 @@ const TypingRace = ({ playerName }) => {
     joinRoom(id);
   };
 
-  // Join an existing room
   const joinRoom = (id) => {
     if (!id) return;
     setCurrentRoom(id);
     const playerRef = ref(db, `rooms/${id}/players/${uid}`);
     set(playerRef, {
-      name: playerName || user?.uid || `Player-${uid.slice(0, 5)}`,
+      name: playerName || `Player-${uid.slice(0, 5)}`,
       progress: 0,
       finished: false,
+      ready: false,
     });
     onDisconnect(playerRef).remove();
   };
 
-  // Listen for room updates
+  // Mark the player as ready
+  const markReady = () => {
+    if (!currentRoom) return;
+    const playerRef = ref(db, `rooms/${currentRoom}/players/${uid}`);
+    update(playerRef, { ready: true });
+  };
+
+  // Listen to room updates
   useEffect(() => {
     if (!currentRoom) return;
     const roomRef = ref(db, `rooms/${currentRoom}`);
@@ -132,11 +128,35 @@ const TypingRace = ({ playerName }) => {
     return () => unsubscribe();
   }, [currentRoom]);
 
-  // Load text when mounted
   useEffect(() => {
     setText(randomizedText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!currentRoom) return;
+    if (Object.keys(players).length > 0) {
+      const allReady = Object.values(players).every((p) => p.ready);
+      if (allReady && status === "waiting") {
+        // start countdown when all are ready and waiting
+        const roomRef = ref(db, `rooms/${currentRoom}`);
+        update(roomRef, { status: "countdown", countdown: 3 });
+
+        let cd = 3;
+        const interval = setInterval(() => {
+          cd -= 1;
+          if (cd > 0) {
+            update(roomRef, { countdown: cd });
+            setCountdown(cd);
+          } else {
+            update(roomRef, { status: "running", countdown: null });
+            setCountdown(null);
+            clearInterval(interval);
+          }
+        }, 1000);
+      }
+    }
+  }, [currentRoom, players, status]);
 
   return (
     <VStack
@@ -155,6 +175,11 @@ const TypingRace = ({ playerName }) => {
       </Text>
 
       <HStack w="100%">
+        <Input
+          placeholder="Your Name"
+          value={playerName}
+          onChange={(e) => setPlayerName(e.target.value)}
+        />
         <Input
           placeholder="Room ID (or leave blank to create)"
           value={roomId}
@@ -198,7 +223,7 @@ const TypingRace = ({ playerName }) => {
         value={userInput}
         onChange={handleChange}
         placeholder="Start typing..."
-        disabled={status === "finished"}
+        disabled={status !== "running"}
       />
 
       <Text>
@@ -221,9 +246,23 @@ const TypingRace = ({ playerName }) => {
         ))}
       </VStack>
 
-      <Button onClick={handleRestart} mt={2}>
-        Reset My Input
-      </Button>
+      <HStack>
+        {status === "waiting" && currentRoom && (
+          <Button onClick={markReady} colorScheme="blue" mt={2}>
+            I'm Ready
+          </Button>
+        )}
+
+        {status === "countdown" && (
+          <Text fontSize="2xl" fontWeight="bold" color="orange.500">
+            Starting in: {countdown}
+          </Text>
+        )}
+
+        <Button onClick={handleRestart} mt={2}>
+          Reset My Input
+        </Button>
+      </HStack>
     </VStack>
   );
 };
