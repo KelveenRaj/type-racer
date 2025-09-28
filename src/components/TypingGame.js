@@ -54,6 +54,7 @@ const TypingRace = () => {
       name: playerName || `Player-${uid.slice(0, 5)}`,
       progress,
       finished: progress >= 100,
+      ready: players[uid]?.ready || false, // preserve ready state
     });
 
     if (progress >= 100) {
@@ -124,6 +125,7 @@ const TypingRace = () => {
       setStatus(data.status);
       setWinner(data.winner || null);
       setPlayers(data.players || {});
+      setCountdown(data.countdown || null); // ✅ sync countdown from Firebase
     });
     return () => unsubscribe();
   }, [currentRoom]);
@@ -135,7 +137,8 @@ const TypingRace = () => {
 
   useEffect(() => {
     if (!currentRoom) return;
-    if (Object.keys(players).length > 0) {
+    if (Object.keys(players).length > 1) {
+      // ✅ require at least 2 players
       const allReady = Object.values(players).every((p) => p.ready);
       if (allReady && status === "waiting") {
         // start countdown when all are ready and waiting
@@ -147,10 +150,8 @@ const TypingRace = () => {
           cd -= 1;
           if (cd > 0) {
             update(roomRef, { countdown: cd });
-            setCountdown(cd);
           } else {
             update(roomRef, { status: "running", countdown: null });
-            setCountdown(null);
             clearInterval(interval);
           }
         }, 1000);
@@ -200,6 +201,7 @@ const TypingRace = () => {
         fontSize="lg"
         minH="100px"
         w="100%"
+        userSelect="none" // ✅ disable text selection
       >
         {text.split("").map((char, index) => {
           let color = "gray.700";
@@ -240,18 +242,22 @@ const TypingRace = () => {
       <VStack w="100%" align="stretch">
         {Object.entries(players).map(([id, p]) => (
           <Box key={id}>
-            <Text>{p.name}</Text>
+            <Text>
+              {p.name} {p.ready && status === "waiting" ? "✅ Ready" : ""}
+            </Text>
             <Progress value={p.progress} colorScheme="teal" />
           </Box>
         ))}
       </VStack>
 
       <HStack>
-        {status === "waiting" && currentRoom && (
-          <Button onClick={markReady} colorScheme="blue" mt={2}>
-            I'm Ready
-          </Button>
-        )}
+        {status === "waiting" &&
+          currentRoom &&
+          !players[uid]?.ready && ( // ✅ hide ready button once clicked
+            <Button onClick={markReady} colorScheme="blue" mt={2}>
+              I'm Ready
+            </Button>
+          )}
 
         {status === "countdown" && (
           <Text fontSize="2xl" fontWeight="bold" color="orange.500">
