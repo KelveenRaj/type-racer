@@ -1,3 +1,4 @@
+// src/components/TypingRace.js
 import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
@@ -9,9 +10,10 @@ import {
   HStack,
   Progress,
 } from "@chakra-ui/react";
-import { database as db } from "../firebase";
+import { database as db, auth } from "../firebase";
 import { ref, set, onValue, onDisconnect, update } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
+import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 
 const sampleTexts = [
   "But when a man suspects any wrong, it sometimes happens that if he be already involved in the matter, he insensibly strives to cover up his suspicions even from himself.",
@@ -29,17 +31,32 @@ const TypingRace = ({ playerName }) => {
   const [players, setPlayers] = useState({});
   const [status, setStatus] = useState("waiting");
   const [winner, setWinner] = useState(null);
+  const [user, setUser] = useState(null);
+
   const inputRef = useRef(null);
   const uid = useRef(uuidv4()).current;
 
   const randomizedText =
     sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
 
+  // Handle Firebase Auth
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+      } else {
+        // Sign in anonymously if not signed in
+        signInAnonymously(auth).catch(console.error);
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // Push progress to Firebase
   const pushProgress = (room, progress) => {
     const roomRef = ref(db, `rooms/${room}/players/${uid}`);
     set(roomRef, {
-      name: playerName || `Player-${uid.slice(0, 5)}`,
+      name: playerName || user?.uid || `Player-${uid.slice(0, 5)}`,
       progress,
       finished: progress >= 100,
     });
@@ -66,13 +83,15 @@ const TypingRace = ({ playerName }) => {
     }
   };
 
+  // Reset input (not the whole room)
   const handleRestart = () => {
     setUserInput("");
     setProgress(0);
     if (currentRoom) pushProgress(currentRoom, 0);
-    inputRef.current.focus();
+    inputRef.current?.focus();
   };
 
+  // Create a new room
   const createRoom = () => {
     const id = uuidv4().slice(0, 6).toUpperCase();
     setCurrentRoom(id);
@@ -85,17 +104,20 @@ const TypingRace = ({ playerName }) => {
     joinRoom(id);
   };
 
+  // Join an existing room
   const joinRoom = (id) => {
+    if (!id) return;
     setCurrentRoom(id);
     const playerRef = ref(db, `rooms/${id}/players/${uid}`);
     set(playerRef, {
-      name: playerName || `Player-${uid.slice(0, 5)}`,
+      name: playerName || user?.uid || `Player-${uid.slice(0, 5)}`,
       progress: 0,
       finished: false,
     });
     onDisconnect(playerRef).remove();
   };
 
+  // Listen for room updates
   useEffect(() => {
     if (!currentRoom) return;
     const roomRef = ref(db, `rooms/${currentRoom}`);
@@ -110,6 +132,7 @@ const TypingRace = ({ playerName }) => {
     return () => unsubscribe();
   }, [currentRoom]);
 
+  // Load text when mounted
   useEffect(() => {
     setText(randomizedText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
