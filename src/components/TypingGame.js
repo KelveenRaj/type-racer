@@ -9,30 +9,9 @@ import {
   HStack,
   Progress,
 } from "@chakra-ui/react";
-import { initializeApp } from "firebase/app";
-import {
-  getDatabase,
-  ref,
-  set,
-  onValue,
-  onDisconnect,
-  update,
-} from "firebase/database";
+import { database as db } from "../firebase";
+import { ref, set, onValue, onDisconnect, update } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
-
-// ✅ Replace with your Firebase config
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT.firebaseio.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "SENDER_ID",
-  appId: "APP_ID",
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
 
 const sampleTexts = [
   "But when a man suspects any wrong, it sometimes happens that if he be already involved in the matter, he insensibly strives to cover up his suspicions even from himself.",
@@ -43,6 +22,7 @@ const sampleTexts = [
 const TypingRace = ({ playerName }) => {
   const [text, setText] = useState("");
   const [userInput, setUserInput] = useState("");
+  // eslint-disable-next-line no-unused-vars
   const [progress, setProgress] = useState(0);
   const [roomId, setRoomId] = useState("");
   const [currentRoom, setCurrentRoom] = useState(null);
@@ -132,6 +112,7 @@ const TypingRace = ({ playerName }) => {
 
   useEffect(() => {
     setText(randomizedText);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
