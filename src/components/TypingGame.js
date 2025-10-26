@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useRoomCleanup } from "../hooks/useRoomCleanup";
 import {
   Box,
   Button,
@@ -32,6 +33,7 @@ const TypingRace = () => {
   const uid = useRef(uuidv4()).current;
 
   const generateSentence = useGenerateSentence();
+  useRoomCleanup();
 
   // Game timer effect & start time
   useEffect(() => {
@@ -79,7 +81,7 @@ const TypingRace = () => {
       });
       if (winner !== winnerId) {
         const roomRef = ref(db, `rooms/${currentRoom}`);
-        update(roomRef, { winner: winnerId });
+        update(roomRef, { winner: winnerId, endedAt: Date.now() });
       }
     }
   }, [status, players, currentRoom, winner]);
