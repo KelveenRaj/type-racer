@@ -13,12 +13,7 @@ import { database as db, auth } from "../firebase";
 import { ref, set, onValue, onDisconnect, update } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-
-const sampleTexts = [
-  "But when a man suspects any wrong, it sometimes happens that if he be already involved in the matter, he insensibly strives to cover up his suspicions even from himself.",
-  "Some enchanted evening, you may see a stranger. You may see a stranger across a crowded room, and somehow you know, you know even then, that somewhere you'll see her again and again.",
-  "Keep in mind that many people have died for their beliefs; it's actually quite common. The real courage is in living and suffering for what you believe.",
-];
+import { useGenerateSentence } from "../hooks/useGenerateSentence";
 
 const TypingRace = () => {
   const [startTime, setStartTime] = useState(null);
@@ -33,12 +28,10 @@ const TypingRace = () => {
   const [countdown, setCountdown] = useState(null);
   const [gameTimeLeft, setGameTimeLeft] = useState(60); // 120s timer
   const timerRef = useRef(null);
-
   const inputRef = useRef(null);
   const uid = useRef(uuidv4()).current;
 
-  const randomizedText =
-    sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
+  const generateSentence = useGenerateSentence();
 
   // Game timer effect & start time
   useEffect(() => {
@@ -154,7 +147,7 @@ const TypingRace = () => {
     const id = uuidv4().slice(0, 6).toUpperCase();
     setCurrentRoom(id);
     set(ref(db, `rooms/${id}`), {
-      text: randomizedText,
+      text: generateSentence(),
       status: "waiting",
       players: {},
       winner: null,
@@ -199,7 +192,7 @@ const TypingRace = () => {
   }, [currentRoom]);
 
   useEffect(() => {
-    setText(randomizedText);
+    setText(generateSentence());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
