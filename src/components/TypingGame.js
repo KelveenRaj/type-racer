@@ -21,6 +21,7 @@ const sampleTexts = [
 ];
 
 const TypingRace = () => {
+  const [startTime, setStartTime] = useState(null);
   const [text, setText] = useState("");
   const [userInput, setUserInput] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -30,12 +31,65 @@ const TypingRace = () => {
   const [winner, setWinner] = useState(null);
   const [playerName, setPlayerName] = useState("");
   const [countdown, setCountdown] = useState(null);
+  const [gameTimeLeft, setGameTimeLeft] = useState(60); // 120s timer
+  const timerRef = useRef(null);
 
   const inputRef = useRef(null);
   const uid = useRef(uuidv4()).current;
 
   const randomizedText =
     sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
+
+  // Game timer effect & start time
+  useEffect(() => {
+    if (status === "running") {
+      setGameTimeLeft(60);
+      setStartTime(Date.now());
+      timerRef.current = setInterval(() => {
+        setGameTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current);
+            // End game if timer runs out
+            if (currentRoom) {
+              const roomRef = ref(db, `rooms/${currentRoom}`);
+              update(roomRef, { status: "finished", timerExpired: true });
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [status, currentRoom]);
+
+  // Calculate winner when game ends (timer or all finished)
+  useEffect(() => {
+    if (!currentRoom) return;
+    if (status === "finished") {
+      let winnerId = null;
+      let bestScore = -1;
+      let bestAccuracy = -1;
+      Object.entries(players).forEach(([id, p]) => {
+        if (p.wpm && p.accuracy) {
+          if (
+            p.wpm > bestScore ||
+            (p.wpm === bestScore && p.accuracy > bestAccuracy)
+          ) {
+            bestScore = p.wpm;
+            bestAccuracy = p.accuracy;
+            winnerId = id;
+          }
+        }
+      });
+      if (winner !== winnerId) {
+        const roomRef = ref(db, `rooms/${currentRoom}`);
+        update(roomRef, { winner: winnerId });
+      }
+    }
+  }, [status, players, currentRoom, winner]);
 
   // Firebase Auth
   useEffect(() => {
@@ -50,20 +104,34 @@ const TypingRace = () => {
   // Push progress
   const pushProgress = (room, progress) => {
     const roomRef = ref(db, `rooms/${room}/players/${uid}`);
-    set(roomRef, {
+    let stats = {
       name: playerName || `Player-${uid.slice(0, 5)}`,
       progress,
       finished: progress >= 100,
       ready: players[uid]?.ready || false, // preserve ready state
-    });
-
-    if (progress >= 100) {
-      const roomMetaRef = ref(db, `rooms/${room}`);
-      update(roomMetaRef, {
-        status: "finished",
-        winner: uid,
-      });
+    };
+    if (progress >= 100 && startTime) {
+      const finishTime = Date.now();
+      const timeTaken = (finishTime - startTime) / 1000; // seconds
+      const wordsTyped = userInput.trim().split(/\s+/).length;
+      const wpm = Math.round((wordsTyped / timeTaken) * 60);
+      // Accuracy: correct chars / total chars
+      let correctChars = 0;
+      for (let i = 0; i < userInput.length; i++) {
+        if (userInput[i] === text[i]) correctChars++;
+      }
+      const accuracy = text.length
+        ? Math.round((correctChars / text.length) * 100)
+        : 0;
+      stats = {
+        ...stats,
+        finishTime,
+        timeTaken,
+        wpm,
+        accuracy,
+      };
     }
+    set(roomRef, stats);
   };
 
   const handleChange = (e) => {
@@ -156,6 +224,14 @@ const TypingRace = () => {
           }
         }, 1000);
       }
+      // End game if all players finished (progress 100%)
+      const allFinished =
+        Object.values(players).length > 1 &&
+        Object.values(players).every((p) => p.progress === 100);
+      if (status === "running" && allFinished) {
+        const roomRef = ref(db, `rooms/${currentRoom}`);
+        update(roomRef, { status: "finished", finishedEarly: true });
+      }
     }
   }, [currentRoom, players, status]);
 
@@ -168,6 +244,11 @@ const TypingRace = () => {
       borderRadius="md"
     >
       <Heading size="md">Realtime Typing Race</Heading>
+      {status === "running" && (
+        <Text fontSize="lg" color="red.500" fontWeight="bold">
+          Time Left: {gameTimeLeft}s
+        </Text>
+      )}
 
       <Text fontSize="sm" color="gray.600">
         {currentRoom
@@ -233,10 +314,26 @@ const TypingRace = () => {
         {Object.keys(players).length}
       </Text>
 
-      {status === "finished" && winner && (
-        <Text color="teal.600" fontWeight="bold">
-          Winner: {players[winner]?.name || "Unknown"}
-        </Text>
+      {status === "finished" && (
+        <Box>
+          <Text color="teal.600" fontWeight="bold">
+            {winner
+              ? `🏆 Winner: ${players[winner]?.name || "Unknown"} (WPM: ${
+                  players[winner]?.wpm || 0
+                }, Accuracy: ${players[winner]?.accuracy || 0}%)`
+              : "No winner"}
+          </Text>
+          <VStack align="start" mt={2}>
+            {Object.entries(players).map(([id, p]) => (
+              <Text key={id}>
+                {p.name}:{" "}
+                {p.finished
+                  ? `WPM: ${p.wpm || 0}, Accuracy: ${p.accuracy || 0}%`
+                  : "Not finished"}
+              </Text>
+            ))}
+          </VStack>
+        </Box>
       )}
 
       <VStack w="100%" align="stretch">
